@@ -1,0 +1,100 @@
+version: 2
+
+sources:
+  # ---------------------------------------------------------------------------
+  # Odoo. In the live project these are the `odoo_*_st` staging models, which are
+  # currently all `enabled=false`. This scaffold reads them as sources so it can
+  # be built standalone; when it is merged into the project that owns those
+  # models, swap each `source('odoo', ...)` for the matching `ref('odoo_*_st')`
+  # and delete this source block. The column lists below are the contract that
+  # swap has to satisfy.
+  # ---------------------------------------------------------------------------
+  - name: odoo
+    database: "{{ var('odoo_source_database') }}"
+    schema: "{{ var('odoo_source_schema') }}"
+    tables:
+      - name: gl_lines_st
+        description: >
+          GL line level. One row per journal item. Carries `odoo_company_id` and
+          the Odoo company display name but NOT the company TLA — see companies_l.
+        columns:
+          - name: gl_line_id
+            tests: [not_null, unique]
+          - name: odoo_company_id
+            tests: [not_null]
+          - name: posting_date
+            tests: [not_null]
+          - name: account_code
+            tests: [not_null]
+          - name: amount_signed
+            description: Positive debit / negative credit, in the company's accounting currency.
+
+      - name: analytic_lines_st
+        description: >
+          Analytic distribution of a GL line. POST-distribution amounts: never
+          allocate on these directly, derive a ratio and apply it to the GL
+          amount so the fact reconciles to the ledger.
+        columns:
+          - name: gl_line_id
+            tests: [not_null]
+          - name: analytic_amount
+          - name: analytic_plan_3_label
+            description: 'Cost centre display label, e.g. "[8051] Store UK". centre_code is regex-parsed out of this.'
+
+      - name: ledger_accounts_l
+        description: >
+          Ledger account lookup. NOT unique on `account_key`: 18 of 259 PUK
+          accounts share one. Deduplicated in stg_ledger_accounts.
+        columns:
+          - name: account_key
+          - name: account_group
+          - name: cost_centre_required
+
+      - name: profit_centre_l
+        description: >
+          Profit-centre grain. Historically the only place the Odoo company id ->
+          company TLA translation lived; joining GL through it fans every
+          posting, hence stg_companies.
+
+      - name: cost_centre_l
+        columns:
+          - name: centre_code
+          - name: allocates_to_other_cost_centres
+            description: '`Cost allocation to other cost centers` in the config sheet. 32 centres carry True.'
+          - name: allocation_key
+            description: Key used to empty this centre out to profit centres in pass 2.
+
+  # ---------------------------------------------------------------------------
+  # Governed uploads. Everything that is not Odoo lands here on one schema, so
+  # the downstream models do not care which company came from where.
+  # ---------------------------------------------------------------------------
+  - name: finance_uploads
+    database: "{{ var('finance_source_database') }}"
+    schema: "{{ var('finance_source_schema') }}"
+    tables:
+      - name: gl_import
+        description: >
+          Non-Odoo GL. DATEV (PDE) plus the NO / US / CL / BR / PL import sheets,
+          conformed to one schema on upload. Monthly, per import sheet.
+        columns:
+          - name: company_tla
+            tests: [not_null]
+          - name: period_month
+            tests: [not_null]
+          - name: source_sheet
+            description: 'DE_Import, NO_Import, US_Import, ... — kept for traceability.'
+
+      - name: finance_data
+        description: >
+          `Financial_data.xlsx -> Finance data`. 116 rows of management
+          adjustments, NOT the GL. Stays source-tagged all the way to the fact so
+          adjustments remain visible rather than baked in.
+        columns:
+          - name: company_tla
+          - name: additional_management_reporting
+            description: Free-text comment that has to survive to the mart.
+
+      - name: config_companies
+        description: '`Financial_data_config.xlsx -> Companies`. 14 rows, 8 carry MC data.'
+      - name: config_cost_centres
+      - name: config_profit_centres

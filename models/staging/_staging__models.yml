@@ -1,0 +1,112 @@
+version: 2
+
+models:
+  - name: stg_companies
+    description: >
+      One row per company. The bridge that did not exist: GL lines carry
+      odoo_company_id, ledger_accounts_l keys on the TLA, and the only place
+      that translation lived was profit_centre_l — which is at profit-centre
+      grain and fans every posting it touches.
+    columns:
+      - name: company_tla
+        tests: [not_null, unique]
+      - name: odoo_company_id
+        tests:
+          - unique:
+              config:
+                where: "odoo_company_id is not null"
+      - name: accounting_currency
+        tests: [not_null]
+
+  - name: stg_ledger_accounts
+    description: ledger_accounts_l collapsed to one row per account_key.
+    columns:
+      - name: account_key
+        tests: [not_null, unique]
+      - name: account_group
+        tests: [not_null]
+      - name: has_account_group_conflict
+        description: >
+          True where duplicate rows for one account_key disagreed on
+          account_group. Warn only — pre-existing data quality, and a hard
+          failure here blocks the whole build on something finance has to fix
+          at source.
+        tests:
+          - accepted_values:
+              values: [false]
+              quote: false
+              config:
+                severity: warn
+
+  - name: stg_cost_centres
+    columns:
+      - name: centre_code
+        tests: [not_null]
+      - name: allocation_key
+        description: >
+          Null means this centre never empties out to profit centres. Warn if a
+          centre that does not allocate onward also has no key — its balance
+          will land on its default profit centre or UNALLOCATED.
+        tests:
+          - not_null:
+              config:
+                severity: warn
+                where: "not allocates_to_other_cost_centres"
+
+  - name: stg_profit_centres
+    columns:
+      - name: profit_centre_code
+        tests: [not_null]
+
+  - name: stg_gl_analytic_weights
+    description: >
+      Cost-centre weights derived as a ratio from the analytic lines, never the
+      analytic amounts themselves.
+    columns:
+      - name: weight
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+      - name: centre_code
+        tests: [not_null]
+
+  - name: stg_gl_postings_odoo
+    columns:
+      - name: gl_line_id
+        tests: [not_null, unique]
+      - name: company_tla
+        tests: [not_null]
+      - name: account_key
+        tests:
+          - relationships:
+              to: ref('stg_ledger_accounts')
+              field: account_key
+              config:
+                severity: warn
+
+  - name: stg_gl_postings_import
+    columns:
+      - name: gl_line_id
+        tests: [not_null, unique]
+      - name: company_tla
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_companies')
+              field: company_tla
+
+  - name: stg_manual_adjustments
+    description: >
+      Management adjustments, source-tagged and kept separate the whole way
+      down. Excluded from the GL reconciliation by design.
+    columns:
+      - name: gl_line_id
+        tests: [not_null, unique]
+      - name: is_management_adjustment
+        tests:
+          - accepted_values:
+              values: [true]
+              quote: false

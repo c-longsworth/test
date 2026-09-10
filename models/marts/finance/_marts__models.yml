@@ -1,0 +1,63 @@
+version: 2
+
+models:
+  - name: fct_profit_centre_postings
+    description: >
+      Single source of truth for profit-centre reporting, and the model that
+      ties to the ledger. Four layers: the GL itself plus three allocation
+      layers that each net to zero.
+
+      Reading it: exclude profit_centre_code = '-'. Those are the contra rows
+      that make the arithmetic close.
+    columns:
+      - name: layer
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['gl', 'alloc_cc_to_cc', 'alloc_cc_to_pc', 'alloc_var_key']
+      - name: company_tla
+        tests: [not_null]
+      - name: period_month
+        tests: [not_null]
+      - name: profit_centre_code
+        tests: [not_null]
+      - name: amount
+        tests: [not_null]
+      - name: source_system
+        description: Kept to the end so the management overlay can always be stripped back out.
+        tests:
+          - accepted_values:
+              values: ['odoo', 'import', 'manual_adjustment']
+
+  - name: fct_mc_profit_centre
+    description: >
+      The MC report, long format: one row per profit centre x month x report
+      line, with month, YTD and rolling-year values. Looker reads this and
+      pivots months across columns.
+
+      Amounts stay in ledger signs. Presentation signs belong in Looker.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ['company_tla', 'profit_centre_code', 'period_month', 'row_order']
+    columns:
+      - name: row_order
+        tests:
+          - not_null
+          - relationships:
+              to: ref('seed_pl_report_lines')
+              field: row_order
+      - name: label
+        tests: [not_null]
+      - name: month_value
+        description: >
+          Null only on ratio rows where the denominator (Revenue) is zero — a
+          profit centre with no revenue that month shows blank, not 0%.
+        tests:
+          - not_null:
+              config:
+                where: "row_type <> 'ratio'"
+      - name: is_rolling_year_incomplete
+        description: >
+          True where fewer than 12 months of history exist behind the rolling
+          year figure. Surface it in Looker; a rolling year built on 4 months is
+          not a rolling year.

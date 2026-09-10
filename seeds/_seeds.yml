@@ -1,0 +1,134 @@
+version: 2
+
+seeds:
+  # ---------------------------------------------------------------------------
+  # PLACEHOLDER DATA. Every row in every seed here is illustrative — enough to
+  # exercise the logic and the tests end to end, and structurally identical to
+  # what the real data looks like. None of it is real. Replace before any output
+  # is shown to anyone. See README "What is real and what is placeholder".
+  # ---------------------------------------------------------------------------
+
+  - name: seed_pl_report_lines
+    description: >
+      The report spec: column B of `MC_Profit_center.xlsx -> Profit center per
+      Month`, one row per report line. This belongs in a seed rather than in
+      SQL — it is a finance-owned layout that changes without any modelling
+      change, and burying 202 rows of it in a CASE statement makes every future
+      edit a code review.
+
+      The placeholder here is an abbreviated 37-row version covering the full
+      structure (revenue -> COGS -> GM -> variable -> CM I -> cost centres ->
+      CM II -> fixed direct -> performance marketing -> allocations -> IT ->
+      depreciation -> total). Replace it with the real 202 rows.
+
+      Deviation from the spec in the brief: `ratio_numerator_row` and
+      `ratio_denominator_row` were added as explicit columns. Encoding a ratio
+      inside `subtotal_formula` would have meant two grammars in one field.
+    columns:
+      - name: row_order
+        description: Display order, and the identifier subtotal_formula references.
+        tests: [not_null, unique]
+      - name: row_type
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['account_group', 'cost_centre', 'subtotal', 'ratio']
+      - name: source_code
+        description: >
+          Account group for account_group rows, cost centre code for cost_centre
+          rows, null for derived rows.
+      - name: subtotal_formula
+        description: Comma-separated signed row_order references, e.g. "10,-20".
+      - name: indent_level
+        tests: [not_null]
+
+  - name: seed_variable_cost_keys
+    description: >
+      `config -> Variable cost keys`, 62 rows. Hand-set rates by company, key and
+      date range; drives the CM I block. Keys: EXP-Shipping, EXP-PaymentVar,
+      EXP-ALLOC-2040, COGS-HandlingIC.
+    tests:
+      - shares_sum_to_one:
+          share_column: share
+          partition_by: ['company_tla', 'key_code', 'valid_from', 'valid_to']
+      - no_overlapping_date_ranges:
+          partition_by: ['company_tla', 'key_code']
+      - no_date_range_gaps:
+          partition_by: ['company_tla', 'key_code']
+    columns:
+      - name: company_tla
+        tests: [not_null]
+      - name: key_code
+        tests: [not_null]
+      - name: profit_centre_code
+        tests: [not_null]
+      - name: share
+        tests: [not_null]
+      - name: valid_from
+        tests: [not_null]
+      - name: valid_to
+        description: Exclusive. Open-ended ranges use 9999-12-31.
+        tests: [not_null]
+
+  - name: seed_allocation_keys
+    description: >
+      `config -> Allocation keys`. Empties cost-centre pools out to profit
+      centres. Keys: REV, OI, OI-p.a., OI-DACH, OI-SCAN, All, plus country codes.
+
+      BLOCKED, and this seed is the blocker made visible. The live sheet is a
+      QUERY over four IMPORTRANGEs to separate Google Sheets and exports as
+      #VALUE!. The only usable extract is `Allocation keys (backup-20250101)`:
+      430 rows, 411 of them PDE, stale since Jan 2025. `Allocation trans.` also
+      references keys FM4105 and FM4106 that appear in neither sheet.
+
+      Build against the backup (build order step 2), reconcile a 2024 month, and
+      do not let anything reach Looker on this data. The four source spreadsheet
+      IDs are in the formula in that sheet. Decision needed on whether this stays
+      a seed or becomes a governed input table — see README.
+    tests:
+      - shares_sum_to_one:
+          share_column: share
+          partition_by: ['company_tla', 'key_code', 'valid_from', 'valid_to']
+      - no_overlapping_date_ranges:
+          partition_by: ['company_tla', 'key_code']
+      - no_date_range_gaps:
+          partition_by: ['company_tla', 'key_code']
+    columns:
+      - name: company_tla
+        tests: [not_null]
+      - name: key_code
+        tests: [not_null]
+      - name: profit_centre_code
+        tests: [not_null]
+      - name: share
+        tests: [not_null]
+      - name: valid_from
+        tests: [not_null]
+      - name: valid_to
+        tests: [not_null]
+
+  - name: seed_cc_to_cc_rules
+    description: >
+      Cost centre to cost centre, the pass that runs first. 32 centres carry
+      `Cost allocation to other cost centers = True`: facilities 4101-4125, IT
+      4200 and 1500, and 8010 / 8011 (DACH / SCAND).
+
+      A target that itself allocates onward is fine and expected — the
+      placeholder data includes 1500 -> 4200 to exercise the chain. A CYCLE is
+      not: it will hit var('cc_to_cc_max_depth') and leave a residue that
+      assert_cc_to_cc_allocation_fully_drains reports.
+    tests:
+      - shares_sum_to_one:
+          share_column: share
+          partition_by: ['company_tla', 'source_cost_centre_code', 'valid_from', 'valid_to']
+      - no_overlapping_date_ranges:
+          partition_by: ['company_tla', 'source_cost_centre_code']
+    columns:
+      - name: company_tla
+        tests: [not_null]
+      - name: source_cost_centre_code
+        tests: [not_null]
+      - name: target_cost_centre_code
+        tests: [not_null]
+      - name: share
+        tests: [not_null]

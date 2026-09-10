@@ -1,0 +1,54 @@
+name: 'finance_review'
+version: '1.0.0'
+config-version: 2
+
+profile: 'finance_review'
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+analysis-paths: ["analyses"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  # Schema holding the Odoo staging models / raw Odoo extracts.
+  odoo_source_database: "RAW"
+  odoo_source_schema: "ODOO"
+  # Schema holding the governed uploads (DATEV / NO / US / CL / BR / PL imports,
+  # Finance data adjustments, and the Financial_data_config sheets).
+  finance_source_database: "RAW"
+  finance_source_schema: "FINANCE_UPLOADS"
+
+  # Reconciliation target: the company + month with a signed-off MC output that
+  # the allocation logic is validated against. See README "Open questions".
+  recon_company_tla: "PDE"
+  recon_month: "2024-12-01"
+
+  # Cost-centre -> cost-centre allocation is a chain (facilities -> IT -> ...).
+  # Depth cap guards against a cycle in seed_cc_to_cc_rules.
+  cc_to_cc_max_depth: 5
+
+  # Bucket label for postings that carry no analytic / cost-centre attribution.
+  unallocated_code: "UNALLOCATED"
+
+models:
+  finance_review:
+    +materialized: view
+    staging:
+      +schema: staging
+    intermediate:
+      +schema: intermediate
+      +materialized: ephemeral
+    marts:
+      +schema: finance
+      +materialized: table
+
+seeds:
+  finance_review:
+    +schema: seeds
+    +quote_columns: false

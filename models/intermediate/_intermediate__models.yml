@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: int_gl_postings_unioned
+    description: Every posting, one schema, GL-line grain. No cost-centre fan-out.
+    columns:
+      - name: gl_line_id
+        tests: [not_null, unique]
+      - name: source_system
+        tests:
+          - accepted_values:
+              values: ['odoo', 'import', 'manual_adjustment']
+
+  - name: int_gl_pl_postings
+    description: >
+      P&L postings attributed to a cost centre, at (gl_line_id, cost_centre_code)
+      grain, and routed to exactly one allocation mechanism.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ['gl_line_id', 'cost_centre_code']
+    columns:
+      - name: allocation_route
+        description: >
+          Exactly one mechanism per posting. Two would double-count at profit
+          centre level while still tying to the GL in total.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['direct', 'variable_key', 'cost_centre_pool']
+      - name: amount
+        tests: [not_null]
+      - name: resolved_profit_centre_code
+        tests: [not_null]
+
+  - name: int_alloc_pass1_cc_to_cc
+    description: Pass 1, cost centre to cost centre. Signed movement layer, sums to zero.
+
+  - name: int_alloc_pass2_cc_to_pc
+    description: Pass 2, pools emptied to profit centres, with contra rows.
+    columns:
+      - name: is_key_coverage_gap
+        description: >
+          True where the pool found no matching allocation key row and fell back
+          to the centre's default profit centre or UNALLOCATED. Expect volume
+          here while the allocation keys are the stale Jan-2025 backup.
+          Deliberately not a failing test — it is a number to watch, and it
+          should go to zero once the real keys land.
+
+  - name: int_pl_report_line_expansion
+    description: >
+      Each subtotal flattened into its signed leaf components. Recursing over
+      the 202-row seed once beats walking a profit-centre x month grid in order.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ['subtotal_row_order', 'component_row_order']
