@@ -1,0 +1,39 @@
+{
+  "display_information": {
+    "name": "Tic Tac Toe²",
+    "description": "Nine games of tic tac toe inside one. Win a board to claim its square.",
+    "background_color": "#1f2d3d",
+    "long_description": "Tic Tac Toe² is ultimate tic tac toe for Slack. Nine small boards sit inside one big board, and winning a small board claims its square. The catch: the square you play in decides which board your opponent has to play in next. Three claimed boards in a row wins the match."
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Tic Tac Toe²",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/ttt2",
+        "description": "Start a game of Tic Tac Toe²",
+        "usage_hint": "@someone  (or nothing, for an open game)",
+        "should_escape": true
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "commands",
+        "chat:write",
+        "chat:write.public"
+      ]
+    }
+  },
+  "settings": {
+    "interactivity": {
+      "is_enabled": true
+    },
+    "socket_mode_enabled": true,
+    "org_deploy_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
